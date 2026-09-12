@@ -1,0 +1,51 @@
+# Development files
+.git/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# UV runtime - exclude bundled dependencies (UV manages these)
+server/
+server/lib/
+
+# Test files
+test_*.py
+*_test.py
+tests/
+run_integration_tests.ps1
+
+# Documentation (not needed in bundle)
+CLAUDE_DESKTOP_SETUP.md
+IMPLEMENTATION_REPORT.md
+P0_IMPLEMENTATION_REPORT.md
+P0_STATUS_PENDING_INTEGRATION.md
+RELIABILITY_AUDIT.md
+INTEGRATION_TEST_INSTRUCTIONS.md
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# Backup and old files
+*_backup_*.py
+*_old.py
+server_old.py
+
+# Integration/helper scripts
+apply_p0_fixes.py
+integrate_p0_complete.py
+integrate_p0_phase2.py
+update_server_request_ids.py
+test_mcp.py
+
+# Krita plugin (will be documented separately for manual install)
+krita-plugin/
+
+# Package output
+*.mcpb

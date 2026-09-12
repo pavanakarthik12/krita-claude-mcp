@@ -1,5 +1,9 @@
 # Krita MCP Server
 
+**✅ Status: Claude Desktop Ready** | [Setup Guide](CLAUDE_DESKTOP_SETUP.md) | [Implementation Report](IMPLEMENTATION_REPORT.md)
+
+> **Latest Update (Aug 26, 2026):** All stdout pollution eliminated, structured returns implemented, comprehensive error handling added. Ready for production Claude Desktop integration.
+
 Let AI paint in [Krita](https://krita.org/) via the [Model Context Protocol](https://modelcontextprotocol.io/).
 
 This bridge allows Claude (or any MCP client) to create canvases, paint strokes, draw shapes, export images, and more — all inside a running Krita instance.
@@ -76,22 +80,51 @@ If using a virtual environment:
 
 ## Available Tools
 
+### Inspection & Information (Read-Only)
 | Tool | Description |
 |------|-------------|
 | `krita_health` | Check if Krita is running with the plugin active |
+| `krita_list_layers` | **NEW** List all layers with hierarchy, visibility, opacity, and active status |
+| `krita_get_canvas_info` | **NEW** Get canvas dimensions, color mode, current frame, animation metadata |
+| `krita_get_color_at` | Eyedropper — sample color at a pixel |
+| `krita_list_brushes` | List available brush presets |
+
+### Document Management
+| Tool | Description |
+|------|-------------|
 | `krita_new_canvas` | Create a new canvas (width, height, background color) |
+| `krita_open_file` | Open an existing .kra, .png, .jpg, etc. |
+| `krita_save` | Save canvas to a specific file path |
+| `krita_get_canvas` | Export canvas to PNG (for AI to see progress) |
+
+### Drawing & Painting
+| Tool | Description |
+|------|-------------|
 | `krita_set_color` | Set foreground paint color (hex) |
 | `krita_set_brush` | Set brush preset, size, and opacity |
 | `krita_stroke` | Paint a stroke through a list of [x, y] points |
 | `krita_fill` | Fill a circular area at a point |
 | `krita_draw_shape` | Draw rectangle, ellipse, or line |
-| `krita_get_canvas` | Export canvas to PNG (for AI to see progress) |
-| `krita_save` | Save canvas to a specific file path |
+| `krita_bulk_strokes` | Paint multiple strokes in one operation (high performance) |
+
+### Editing
+| Tool | Description |
+|------|-------------|
 | `krita_undo` / `krita_redo` | Undo/redo actions |
 | `krita_clear` | Clear canvas to a solid color |
-| `krita_get_color_at` | Eyedropper — sample color at a pixel |
-| `krita_list_brushes` | List available brush presets |
-| `krita_open_file` | Open an existing .kra, .png, .jpg, etc. |
+
+### Animation (27 tools total)
+| Tool | Description |
+|------|-------------|
+| `krita_select_paint_layer` | Select the active paint layer for drawing |
+| `krita_get_current_frame` | Get current timeline frame and keyframes |
+| `krita_set_current_frame` | Set current timeline frame (move playhead) |
+| `krita_create_keyframe` | Create an animation keyframe |
+| `krita_delete_keyframe` | Delete a keyframe |
+| `krita_list_keyframes` | List all keyframes on active layer |
+| `krita_has_keyframe` | Check if keyframe exists at frame |
+| `krita_enable_onion` | Enable/disable onion skin preview |
+| `krita_inspect_previous_frame` | Get downsampled color grid of previous frame |
 
 ## The Export Timeout Fix
 
@@ -125,6 +158,87 @@ def get_result(self, command_id, timeout=120):
 | Plugin HTTP port | `5678` | Edit `SERVER_PORT` in plugin `__init__.py` |
 | MCP server URL | `http://localhost:5678` | Set `KRITA_URL` env var |
 | Canvas output dir | `~/krita-mcp-output` | Edit `CANVAS_OUTPUT_DIR` in plugin `__init__.py` |
+
+## Usage Examples
+
+### Inspecting Layer Structure
+
+```python
+# List all layers in the document
+result = krita_list_layers()
+
+# Example output:
+{
+  "success": True,
+  "layers": [
+    {
+      "name": "Background",
+      "type": "paintlayer",
+      "visible": True,
+      "opacity": 255,
+      "is_active": False,
+      "depth": 0,
+      "parent": None
+    },
+    {
+      "name": "Character Group",
+      "type": "grouplayer",
+      "visible": True,
+      "opacity": 255,
+      "is_active": False,
+      "depth": 0,
+      "children": [
+        {
+          "name": "Body",
+          "type": "paintlayer",
+          "visible": True,
+          "opacity": 255,
+          "is_active": True,
+          "depth": 1,
+          "parent": "Character Group"
+        }
+      ]
+    }
+  ],
+  "layer_count": 2
+}
+```
+
+### Getting Canvas Information
+
+```python
+# Get canvas dimensions and metadata
+result = krita_get_canvas_info()
+
+# Example output:
+{
+  "success": True,
+  "width": 1920,
+  "height": 1080,
+  "name": "My Animation",
+  "color_model": "RGBA",
+  "color_depth": "U8",
+  "current_frame": 5,
+  "animation_length": 24,
+  "frame_rate": 12,
+  "active_layer": {
+    "name": "Paint Layer",
+    "type": "paintlayer"
+  }
+}
+```
+
+### Claude Desktop Usage
+
+When using through Claude Desktop, you can ask:
+
+- **"List all layers in my Krita document"** → Uses `krita_list_layers`
+- **"What are the canvas dimensions?"** → Uses `krita_get_canvas_info`
+- **"Which layer is currently active?"** → Uses `krita_list_layers` or `krita_get_canvas_info`
+- **"What frame am I on?"** → Uses `krita_get_canvas_info`
+- **"Show me the layer hierarchy"** → Uses `krita_list_layers`
+
+These inspection tools are **strictly read-only** and will never modify your document, change layers, or move the timeline.
 
 ## Painting Approach
 

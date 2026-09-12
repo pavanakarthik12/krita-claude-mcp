@@ -1,0 +1,21 @@
+[project]
+name = "krita-mcp"
+version = "1.1.0"
+description = "Deterministic Krita execution tools for Claude - paint, draw, animate, and inspect layers in Krita"
+requires-python = ">=3.10,<4.0"
+dependencies = [
+    "fastmcp>=4.0.0",
+    "httpx>=0.28.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/krita-mcp-claude"
+Repository = "https://github.com/your-org/krita-mcp-claude.git"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+only-include = ["server.py", "manifest.json"]

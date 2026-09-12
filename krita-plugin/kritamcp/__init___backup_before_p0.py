@@ -72,101 +72,6 @@ class CommandQueue:
 command_queue = CommandQueue()
 command_counter = 0
 
-
-# =============================================================================
-# STATE VERIFICATION FRAMEWORK (P0.1)
-# =============================================================================
-
-class StateVerifier:
-    """Reusable state verification for Krita operations."""
-    
-    def __init__(self, request_id=None):
-        self.request_id = request_id or str(uuid.uuid4())[:8]
-    
-    def log(self, message):
-        log(message, self.request_id)
-    
-    def verify_document(self, doc, operation="operation"):
-        if doc is None:
-            self.log(f"{operation}: Document is None")
-            return False, {"error_type": "DOCUMENT_NOT_FOUND", "message": "No active document", "recoverable": False, "request_id": self.request_id}
-        try:
-            _ = doc.width()
-            _ = doc.height()
-            return True, None
-        except Exception as e:
-            self.log(f"{operation}: Document invalid: {e}")
-            return False, {"error_type": "DOCUMENT_INVALID", "message": f"Document not accessible: {e}", "recoverable": False, "request_id": self.request_id}
-    
-    def verify_layer_selected(self, doc, expected_layer, operation="select_layer"):
-        try:
-            actual_layer = doc.activeNode()
-            if actual_layer is None:
-                self.log(f"{operation}: Active layer is None")
-                return False, None, {"error_type": "LAYER_SELECTION_FAILED", "message": "Layer selection failed", "recoverable": True, "request_id": self.request_id}
-            if actual_layer != expected_layer:
-                self.log(f"{operation}: Layer mismatch")
-                return False, actual_layer, {"error_type": "LAYER_SELECTION_MISMATCH", "message": "Layer selection mismatch", "expected_layer": expected_layer.name(), "actual_layer": actual_layer.name(), "recoverable": True, "request_id": self.request_id}
-            self.log(f"{operation}: Layer verified")
-            return True, actual_layer, None
-        except Exception as e:
-            self.log(f"{operation}: Verification failed: {e}")
-            return False, None, {"error_type": "LAYER_VERIFICATION_ERROR", "message": str(e), "recoverable": False, "request_id": self.request_id}
-    
-    def verify_frame_selected(self, doc, expected_frame, operation="set_frame"):
-        try:
-            actual_frame = int(doc.currentTime())
-            if actual_frame != expected_frame:
-                self.log(f"{operation}: Frame mismatch")
-                return False, actual_frame, {"error_type": "FRAME_SELECTION_MISMATCH", "message": "Frame selection mismatch", "expected_frame": expected_frame, "actual_frame": actual_frame, "recoverable": True, "request_id": self.request_id}
-            self.log(f"{operation}: Frame verified")
-            return True, actual_frame, None
-        except Exception as e:
-            self.log(f"{operation}: Verification failed: {e}")
-            return False, None, {"error_type": "FRAME_VERIFICATION_ERROR", "message": str(e), "recoverable": False, "request_id": self.request_id}
-    
-    def verify_keyframe_exists(self, node, doc, frame, operation="keyframe"):
-        try:
-            has_method = getattr(node, "hasKeyframeAtTime", None)
-            if not callable(has_method):
-                return False, False, None
-            exists = bool(has_method(int(frame)))
-            self.log(f"{operation}: Keyframe at {frame} exists={exists}")
-            return True, exists, None
-        except Exception as e:
-            self.log(f"{operation}: Verification failed: {e}")
-            return False, False, None
-    
-    def verify_file_created(self, filepath, min_size=100, operation="file"):
-        import os
-        try:
-            if not os.path.exists(filepath):
-                self.log(f"{operation}: File not created")
-                return False, None, {"error_type": "FILE_NOT_CREATED", "message": f"File not created: {filepath}", "filepath": filepath, "recoverable": False, "request_id": self.request_id}
-            file_size = os.stat(filepath).st_size
-            if file_size < min_size:
-                self.log(f"{operation}: File too small")
-                return False, None, {"error_type": "FILE_TOO_SMALL", "message": f"File too small: {file_size} bytes", "filepath": filepath, "file_size": file_size, "recoverable": False, "request_id": self.request_id}
-            self.log(f"{operation}: File verified ({file_size} bytes)")
-            return True, {"filepath": filepath, "file_size": file_size}, None
-        except Exception as e:
-            self.log(f"{operation}: Verification failed: {e}")
-            return False, None, {"error_type": "FILE_VERIFICATION_ERROR", "message": str(e), "filepath": filepath, "recoverable": False, "request_id": self.request_id}
-    
-    def verify_document_in_view(self, app, doc, operation="doc"):
-        try:
-            window = app.activeWindow()
-            if not window:
-                return False, {"error_type": "WINDOW_NOT_FOUND", "message": "No active window", "recoverable": False, "request_id": self.request_id}
-            views = window.views()
-            if not any(v.document() == doc for v in views):
-                return False, {"error_type": "DOCUMENT_NOT_IN_VIEW", "message": "Document not in view", "recoverable": False, "request_id": self.request_id}
-            self.log(f"{operation}: Document in view verified")
-            return True, None
-        except Exception as e:
-            return False, {"error_type": "DOCUMENT_VIEW_VERIFICATION_ERROR", "message": str(e), "recoverable": False, "request_id": self.request_id}
-
-
 class PaintRequestHandler(BaseHTTPRequestHandler):
     """HTTP request handler for paint commands."""
 
@@ -175,16 +80,10 @@ class PaintRequestHandler(BaseHTTPRequestHandler):
         pass
 
     def send_json_response(self, data, status=200):
-        try:
-            payload = json.dumps(data, default=str).encode()
-        except (TypeError, ValueError) as e:
-            payload = json.dumps({"error": f"Failed to encode response: {e}"}).encode()
-            status = 500
-
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
-        self.wfile.write(payload)
+        self.wfile.write(json.dumps(data).encode())
 
     def do_GET(self):
         """Handle GET requests - mainly for health check."""
@@ -199,13 +98,11 @@ class PaintRequestHandler(BaseHTTPRequestHandler):
                 "commands": [
                     "new_canvas", "set_color", "set_brush", "stroke",
                     "fill", "draw_shape", "get_canvas", "undo", "redo",
-                    "draw_path",
                     "clear", "save", "get_color_at", "list_brushes",
                     "open_file", "select_paint_layer",
                     "create_frame", "select_frame", "get_current_frame",
                     "set_current_frame", "create_keyframe", "delete_keyframe", "list_keyframes", "has_keyframe",
-                    "enable_onion", "inspect_previous_frame", "bulk_strokes",
-                    "list_layers", "get_canvas_info"
+                    "enable_onion", "inspect_previous_frame", "bulk_strokes"
                 ]
             })
         else:
@@ -317,8 +214,6 @@ class KritaMCPExtension(Extension):
                 return self.cmd_fill(params)
             elif action == "draw_shape":
                 return self.cmd_draw_shape(params)
-            elif action == "draw_path":
-                return self.cmd_draw_path(params)
             elif action == "get_canvas":
                 return self.cmd_get_canvas(params)
             elif action == "undo":
@@ -358,11 +253,7 @@ class KritaMCPExtension(Extension):
             elif action == "inspect_previous_frame":
                 return self.cmd_inspect_previous_frame(params)
             elif action == "bulk_strokes":
-                return self.cmd_bulk_strokes(params)
-            elif action == "list_layers":
-                return self.cmd_list_layers(params)
-            elif action == "get_canvas_info":
-                return self.cmd_get_canvas_info(params)
+                return self.cmd_bulk_strokes(params, request_id)
             else:
                 return {"error": f"Unknown action: {action}", "request_id": request_id}
 
@@ -661,67 +552,55 @@ class KritaMCPExtension(Extension):
                 pass
         return frame in self._list_keyframes(node, doc)
 
-    def cmd_new_canvas(self, params, request_id=None):
-        """P0.5: Create new canvas WITH VERIFICATION."""
-        verifier = StateVerifier(request_id)
+    def cmd_new_canvas(self, params):
+        """Create a new canvas."""
         width = params.get("width", 800)
         height = params.get("height", 600)
         name = params.get("name", "New Canvas")
         bg_color = params.get("background", "#1a1a2e")
-        if width < 1 or width > 10000:
-            return {"error_type": "INVALID_DIMENSIONS", "message": f"Invalid width: {width}", "recoverable": True, "request_id": request_id}
-        if height < 1 or height > 10000:
-            return {"error_type": "INVALID_DIMENSIONS", "message": f"Invalid height: {height}", "recoverable": True, "request_id": request_id}
+
         app = Krita.instance()
-        try:
-            doc = app.createDocument(width, height, name, "RGBA", "U8", "", 120.0)
-        except Exception as e:
-            return {"error_type": "DOCUMENT_CREATION_FAILED", "message": f"Failed to create document: {e}", "recoverable": False, "request_id": request_id}
-        success, error = verifier.verify_document(doc, "new_canvas")
-        if not success:
-            return error
+
+        # Create document with background color
+        doc = app.createDocument(width, height, name, "RGBA", "U8", "", 120.0)
+
         window = app.activeWindow()
         if window:
-            try:
-                window.addView(doc)
-            except Exception as e:
-                return {"error_type": "VIEW_CREATION_FAILED", "message": f"Failed to add view: {e}", "recoverable": False, "request_id": request_id}
-        success, error = verifier.verify_document_in_view(app, doc, "new_canvas")
-        if not success:
-            return error
+            window.addView(doc)
+
+        # Create a paint layer
         root = doc.rootNode()
         layer = doc.createNode("paint", "paintlayer")
         root.addChildNode(layer, None)
         doc.setActiveNode(layer)
-        success, actual_layer, error = verifier.verify_layer_selected(doc, layer, "new_canvas")
-        if not success:
-            return error
+
+        # Fill background using pixel data
         color = QColor(bg_color)
         r, g, b = color.red(), color.green(), color.blue()
+
+        # Create pixel data for entire canvas (BGRA format)
         pixel_data = bytes([b, g, r, 255] * (width * height))
         layer.setPixelData(pixel_data, 0, 0, width, height)
-        doc.refreshProjection()
-        actual_width = doc.width()
-        actual_height = doc.height()
-        if actual_width != width or actual_height != height:
-            return {"error_type": "DIMENSION_MISMATCH", "message": "Dimension mismatch", "requested_width": width, "requested_height": height, "actual_width": actual_width, "actual_height": actual_height, "recoverable": False, "request_id": request_id}
-        return {"status": "ok", "width": actual_width, "height": actual_height, "name": name, "layer_name": actual_layer.name(), "verified": True, "request_id": request_id}
 
-    def cmd_select_paint_layer(self, params, request_id=None):
-        """P0.2: Select active paint layer WITH VERIFICATION."""
-        verifier = StateVerifier(request_id)
+        doc.refreshProjection()
+
+        return {"status": "ok", "width": width, "height": height, "name": name}
+
+    def cmd_select_paint_layer(self, params):
+        """Select active paint layer for drawing and animation commands."""
         doc = self.get_active_document()
-        success, error = verifier.verify_document(doc, "select_paint_layer")
-        if not success:
-            return error
+        if not doc:
+            return {"error": "No active document"}
+
         layer = self._ensure_active_paint_layer()
         if not layer:
-            return {"error_type": "LAYER_NOT_FOUND", "message": "No paint layer found", "recoverable": False, "request_id": request_id}
-        doc.setActiveNode(layer)
-        success, actual_layer, error = verifier.verify_layer_selected(doc, layer, "select_paint_layer")
-        if not success:
-            return error
-        return {"status": "ok", "layer_name": actual_layer.name(), "layer_type": actual_layer.type(), "verified": True, "request_id": request_id}
+            return {"error": "No paint layer found"}
+
+        return {
+            "status": "ok",
+            "layer_name": layer.name(),
+            "layer_type": layer.type(),
+        }
 
     def cmd_set_color(self, params):
         """Set foreground color."""
@@ -1055,28 +934,26 @@ class KritaMCPExtension(Extension):
 
         return {"status": "ok", "shape": shape}
 
-    def cmd_get_canvas(self, params, request_id=None):
-        """P0.6: Export canvas WITH VERIFICATION."""
-        verifier = StateVerifier(request_id)
+    def cmd_get_canvas(self, params):
+        """Export current canvas to file and return path."""
         filename = params.get("filename", "canvas.png")
+
         doc = self.get_active_document()
-        success, error = verifier.verify_document(doc, "get_canvas")
-        if not success:
-            return error
+        if not doc:
+            return {"error": "No active document"}
+
+        # Ensure filename has extension
         if not filename.endswith('.png'):
             filename += '.png'
+
         filepath = os.path.join(CANVAS_OUTPUT_DIR, filename)
-        os.makedirs(CANVAS_OUTPUT_DIR, exist_ok=True)
-        try:
-            doc.setBatchmode(True)
-            doc.exportImage(filepath, InfoObject())
-            doc.setBatchmode(False)
-        except Exception as e:
-            return {"error_type": "EXPORT_FAILED", "message": f"Failed to export: {e}", "filepath": filepath, "recoverable": False, "request_id": request_id}
-        success, file_stats, error = verifier.verify_file_created(filepath, min_size=100, operation="get_canvas")
-        if not success:
-            return error
-        return {"status": "ok", "path": filepath, "filename": filename, "file_size": file_stats["file_size"], "verified": True, "request_id": request_id}
+
+        # Export image (batch mode suppresses export dialog)
+        doc.setBatchmode(True)
+        doc.exportImage(filepath, InfoObject())
+        doc.setBatchmode(False)
+
+        return {"status": "ok", "path": filepath}
 
     def cmd_undo(self, params):
         """Undo last action."""
@@ -1121,33 +998,22 @@ class KritaMCPExtension(Extension):
 
         return {"status": "ok", "color": bg_color}
 
-    def cmd_save(self, params, request_id=None):
-        """P0.6: Save file WITH VERIFICATION."""
-        verifier = StateVerifier(request_id)
+    def cmd_save(self, params):
+        """Save to specific path."""
         filepath = params.get("path")
         if not filepath:
-            return {"error_type": "INVALID_PARAMETER", "message": "No path specified", "recoverable": True, "request_id": request_id}
+            return {"error": "No path specified"}
+
         doc = self.get_active_document()
-        success, error = verifier.verify_document(doc, "save")
-        if not success:
-            return error
-        import os
-        parent_dir = os.path.dirname(filepath)
-        if parent_dir and not os.path.exists(parent_dir):
-            try:
-                os.makedirs(parent_dir, exist_ok=True)
-            except Exception as e:
-                return {"error_type": "DIRECTORY_CREATION_FAILED", "message": f"Failed to create directory: {e}", "filepath": filepath, "recoverable": False, "request_id": request_id}
-        try:
-            doc.setBatchmode(True)
-            doc.exportImage(filepath, InfoObject())
-            doc.setBatchmode(False)
-        except Exception as e:
-            return {"error_type": "SAVE_FAILED", "message": f"Failed to save: {e}", "filepath": filepath, "recoverable": False, "request_id": request_id}
-        success, file_stats, error = verifier.verify_file_created(filepath, min_size=100, operation="save")
-        if not success:
-            return error
-        return {"status": "ok", "path": filepath, "file_size": file_stats["file_size"], "verified": True, "request_id": request_id}
+        if not doc:
+            return {"error": "No active document"}
+
+        # Batch mode suppresses export dialog
+        doc.setBatchmode(True)
+        doc.exportImage(filepath, InfoObject())
+        doc.setBatchmode(False)
+
+        return {"status": "ok", "path": filepath}
 
     def cmd_get_color_at(self, params):
         """Get color at specific pixel (eyedropper)."""
@@ -1217,32 +1083,36 @@ class KritaMCPExtension(Extension):
         return {"status": "ok", "path": filepath, "name": doc.name(), "width": doc.width(), "height": doc.height()}
 
     # --- Animation frame/keyframe helpers ---
-    def cmd_create_keyframe(self, params, request_id=None):
-        """P0.4: Create keyframe WITH RETRY AND VERIFICATION."""
-        verifier = StateVerifier(request_id)
+    def cmd_create_keyframe(self, params):
+        """Create a real keyframe on the active paint layer at a given frame."""
         doc = self.get_active_document()
-        success, error = verifier.verify_document(doc, "create_keyframe")
-        if not success:
-            return error
+        if not doc:
+            return {"error": "No active document"}
+
         node = self._ensure_active_paint_layer()
         if not node:
-            return {"error_type": "LAYER_NOT_FOUND", "message": "No active paint layer", "recoverable": False, "request_id": request_id}
+            return {"error": "No active paint layer"}
+
         frame = int(params.get("frame", self._get_current_time(doc)))
-        success, exists, _ = verifier.verify_keyframe_exists(node, doc, frame, "create_keyframe_precheck")
-        if success and exists:
-            return {"status": "ok", "created_frame": frame, "current_frame": self._get_current_time(doc), "keyframes": self._list_keyframes(node, doc), "already_existed": True, "verified": True, "request_id": request_id}
-        max_attempts = 2
-        for attempt in range(max_attempts):
-            verifier.log(f"Keyframe creation attempt {attempt + 1}/{max_attempts}")
-            self._create_keyframe(node, doc, frame)
-            success, exists, _ = verifier.verify_keyframe_exists(node, doc, frame, "create_keyframe_verify")
-            if success and exists:
-                verifier.log(f"Keyframe verified on attempt {attempt + 1}")
-                return {"status": "ok", "created_frame": frame, "current_frame": self._get_current_time(doc), "keyframes": self._list_keyframes(node, doc), "attempts": attempt + 1, "verified": True, "request_id": request_id}
-            if attempt < max_attempts - 1:
-                QApplication.processEvents()
-        verifier.log(f"Keyframe creation failed after {max_attempts} attempts")
-        return {"error_type": "KEYFRAME_CREATION_FAILED", "message": f"Failed to create keyframe after {max_attempts} attempts", "requested_frame": frame, "current_frame": self._get_current_time(doc), "keyframes": self._list_keyframes(node, doc), "attempts": max_attempts, "recoverable": True, "debug": self._diagnose_timeline(doc), "request_id": request_id, "known_limitation": "Krita keyframe API has known reliability issues"}
+        created = self._create_keyframe(node, doc, frame)
+        keyframes = self._list_keyframes(node, doc)
+        current = self._get_current_time(doc)
+
+        if not created:
+            return {
+                "error": "Failed to create keyframe",
+                "requested_frame": frame,
+                "current_frame": current,
+                "keyframes": keyframes,
+                "debug": self._diagnose_timeline(doc),
+            }
+
+        return {
+            "status": "ok",
+            "created_frame": frame,
+            "current_frame": current,
+            "keyframes": keyframes,
+        }
 
     def _diagnose_timeline(self, doc):
         """Collect diagnostics about the animation/timeline state (for debugging)."""
@@ -1282,24 +1152,20 @@ class KritaMCPExtension(Extension):
             out[f"action_{name}"] = (action is not None, action.isEnabled() if action else None)
         return out
 
-    def cmd_set_current_frame(self, params, request_id=None):
-        """P0.3: Set timeline current frame WITH VERIFICATION."""
-        verifier = StateVerifier(request_id)
+    def cmd_set_current_frame(self, params):
+        """Set timeline current frame/time."""
         doc = self.get_active_document()
-        success, error = verifier.verify_document(doc, "set_current_frame")
-        if not success:
-            return error
+        if not doc:
+            return {"error": "No active document"}
+
         frame = int(params.get("frame", 0))
         try:
-            doc.setCurrentTime(frame)
+            current = self._set_current_time(doc, frame)
+            node = self._get_active_paint_layer()
+            keyframes = self._list_keyframes(node, doc) if node else []
+            return {"status": "ok", "current_frame": current, "keyframes": keyframes}
         except Exception as e:
-            return {"error_type": "FRAME_SELECTION_FAILED", "message": f"Failed to set frame: {e}", "requested_frame": frame, "recoverable": True, "request_id": request_id}
-        success, actual_frame, error = verifier.verify_frame_selected(doc, frame, "set_current_frame")
-        if not success:
-            return error
-        node = self._get_active_paint_layer()
-        keyframes = self._list_keyframes(node, doc) if node else []
-        return {"status": "ok", "current_frame": actual_frame, "verified": True, "keyframes": keyframes, "request_id": request_id}
+            return {"error": str(e)}
 
     def cmd_get_current_frame(self, params):
         doc = self.get_active_document()
@@ -1459,217 +1325,6 @@ class KritaMCPExtension(Extension):
 
 
 
-
-    def cmd_list_layers(self, params):
-        """
-        List all layers in the current document (READ-ONLY).
-        
-        Returns structured information about all layers including:
-        - name, type, visibility, opacity
-        - hierarchy (parent/child relationships)
-        - whether each layer is the active layer
-        - layer identifiers/indices
-        
-        This operation is strictly read-only and does not modify any state.
-        """
-        doc = self.get_active_document()
-        if not doc:
-            return {"error": "No active document"}
-        
-        try:
-            active_node = doc.activeNode()
-            active_uuid = str(active_node.uniqueId()) if active_node else None
-            
-            def serialize_node(node, parent_name=None, depth=0):
-                """Recursively serialize a node and its children."""
-                try:
-                    # Get basic properties
-                    node_data = {
-                        "name": node.name(),
-                        "type": node.type(),
-                        "visible": node.visible(),
-                        "opacity": int(node.opacity()),  # 0-255
-                        "locked": node.locked() if hasattr(node, "locked") else False,
-                        "uuid": str(node.uniqueId()),
-                        "is_active": str(node.uniqueId()) == active_uuid,
-                        "depth": depth,
-                        "parent": parent_name
-                    }
-                    
-                    # Add animation info if available
-                    if hasattr(node, "animated"):
-                        try:
-                            node_data["animated"] = bool(node.animated())
-                        except:
-                            node_data["animated"] = False
-                    
-                    # Recursively process children for group layers
-                    children = node.childNodes() if hasattr(node, "childNodes") else []
-                    if children:
-                        node_data["children"] = [
-                            serialize_node(child, node.name(), depth + 1)
-                            for child in children
-                        ]
-                    
-                    return node_data
-                except Exception as e:
-                    return {
-                        "name": str(node),
-                        "type": "unknown",
-                        "error": str(e),
-                        "depth": depth
-                    }
-            
-            # Start from root and serialize all layers
-            root = doc.rootNode()
-            layers = []
-            
-            # Process all child nodes of root
-            for child in root.childNodes():
-                layers.append(serialize_node(child, None, 0))
-            
-            return {
-                "status": "ok",
-                "layers": layers,
-                "layer_count": len(layers),
-                "active_layer_uuid": active_uuid
-            }
-            
-        except Exception as e:
-            return {"error": f"Failed to list layers: {str(e)}"}
-
-    def cmd_get_canvas_info(self, params):
-        """
-        Get canvas/document metadata (READ-ONLY).
-        
-        Returns:
-        - Canvas dimensions (width, height in pixels)
-        - Color model and bit depth
-        - Document name
-        - Current frame/time (for animations)
-        - Animation metadata if available
-        
-        This operation is strictly read-only and does not modify any state.
-        """
-        doc = self.get_active_document()
-        if not doc:
-            return {"error": "No active document"}
-        
-        try:
-            info = {
-                "status": "ok",
-                "width": doc.width(),
-                "height": doc.height(),
-                "name": doc.name(),
-                "filename": doc.fileName() if doc.fileName() else None,
-                "resolution": doc.resolution(),
-                "color_model": doc.colorModel(),
-                "color_depth": doc.colorDepth(),
-                "color_profile": doc.colorProfile()
-            }
-            
-            # Add animation information
-            try:
-                info["current_frame"] = int(doc.currentTime())
-                info["animation_length"] = int(doc.animationLength())
-                info["playback_start"] = int(doc.playBackStartTime())
-                info["playback_end"] = int(doc.playBackEndTime())
-                info["frame_rate"] = int(doc.framesPerSecond())
-            except Exception as e:
-                info["animation_error"] = str(e)
-            
-            # Add active layer info
-            active_node = doc.activeNode()
-            if active_node:
-                info["active_layer"] = {
-                    "name": active_node.name(),
-                    "type": active_node.type(),
-                    "uuid": active_node.uniqueId()
-                }
-            
-            # Add document modification state
-            try:
-                info["modified"] = doc.modified()
-            except:
-                pass
-            
-            return info
-            
-        except Exception as e:
-            return {"error": f"Failed to get canvas info: {str(e)}"}
-
-    def cmd_draw_path(self, params):
-        """Render connected cubic Bezier segments as one raster stroke."""
-        segments = params.get("segments", [])
-        if not segments:
-            return {"error": "No path segments provided"}
-
-        layer = self._ensure_active_paint_layer()
-        if not layer:
-            return {"error": "No active paint layer"}
-
-        doc = self.get_active_document()
-        view = self.get_active_view()
-        if not view:
-            return {"error": "No active view"}
-
-        samples = max(4, min(128, int(params.get("samples_per_segment", 24))))
-        brush_size = params.get("brush_size", self.current_brush_size)
-        opacity = float(params.get("opacity", 1.0))
-        hardness = float(params.get("hardness", 0.5))
-
-        color_hex = params.get("color")
-        if color_hex:
-            try:
-                color = QColor(color_hex)
-                view.setForeGroundColor(ManagedColor.fromQColor(color, view.canvas()))
-            except Exception as e:
-                return {"error": f"Invalid color {color_hex}: {e}"}
-
-        points = []
-        try:
-            for index, segment in enumerate(segments):
-                start = segment["start"]
-                control1 = segment["control1"]
-                control2 = segment["control2"]
-                end = segment["end"]
-
-                if index and points:
-                    previous = points[-1]
-                    if abs(previous[0] - start[0]) > 1e-6 or abs(previous[1] - start[1]) > 1e-6:
-                        return {"error": f"Segment {index} is not connected to the previous segment"}
-
-                for step in range(samples + 1):
-                    if index and step == 0:
-                        continue
-                    t = step / samples
-                    inverse = 1.0 - t
-                    points.append([
-                        inverse ** 3 * start[0]
-                        + 3 * inverse ** 2 * t * control1[0]
-                        + 3 * inverse * t ** 2 * control2[0]
-                        + t ** 3 * end[0],
-                        inverse ** 3 * start[1]
-                        + 3 * inverse ** 2 * t * control1[1]
-                        + 3 * inverse * t ** 2 * control2[1]
-                        + t ** 3 * end[1]
-                    ])
-        except (KeyError, TypeError, ValueError, IndexError) as e:
-            return {"error": f"Invalid path segment: {e}"}
-
-        result = self._draw_stroke_pixels(
-            layer, doc, view, points, brush_size, hardness, opacity
-        )
-        if "error" in result:
-            return result
-
-        doc.refreshProjection()
-        return {
-            "status": "ok",
-            "segments_drawn": len(segments),
-            "points_sampled": len(points),
-            "errors": None
-        }
 
     def cmd_bulk_strokes(self, params):
         """

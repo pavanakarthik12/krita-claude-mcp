@@ -1,0 +1,169 @@
+{
+  "manifest_version": "0.4",
+  "name": "krita-mcp",
+  "display_name": "Krita MCP Claude",
+  "version": "1.1.0",
+  "description": "Deterministic Krita execution tools for Claude - paint, draw, animate, and inspect layers in Krita",
+  "long_description": "Bridge between Claude and Krita painting application. Exposes deterministic painting tools over MCP, allowing Claude to create canvases, paint strokes, draw shapes, manage animation keyframes, inspect layers, query canvas metadata, and export images. Requires Krita to be running with the Krita MCP Bridge plugin installed. This extension provides the execution layer only - Claude provides the intelligence.",
+  "author": {
+    "name": "Krita MCP Contributors"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/krita-mcp-claude.git"
+  },
+  "keywords": [
+    "krita",
+    "painting",
+    "drawing",
+    "animation",
+    "digital-art",
+    "mcp",
+    "execution-layer"
+  ],
+  "license": "MIT",
+  "server": {
+    "type": "uv",
+    "entry_point": "server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "${__dirname}",
+        "server.py"
+      ],
+      "env": {
+        "KRITA_URL": "${user_config.krita_url}"
+      }
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": [
+      "win32",
+      "darwin",
+      "linux"
+    ]
+  },
+  "user_config": {
+    "krita_url": {
+      "type": "string",
+      "title": "Krita Plugin URL",
+      "description": "HTTP URL where Krita MCP Bridge plugin is listening (default: http://localhost:5678)",
+      "default": "http://localhost:5678",
+      "required": false
+    }
+  },
+  "tools": [
+    {
+      "name": "krita_health",
+      "description": "Check if Krita is running with the MCP plugin active"
+    },
+    {
+      "name": "krita_new_canvas",
+      "description": "Create a new canvas with specified dimensions and background"
+    },
+    {
+      "name": "krita_open_file",
+      "description": "Open an existing file in Krita (.kra, .png, .jpg, etc)"
+    },
+    {
+      "name": "krita_save",
+      "description": "Save the current canvas to a specific file path"
+    },
+    {
+      "name": "krita_get_canvas",
+      "description": "Export current canvas to PNG for inspection"
+    },
+    {
+      "name": "krita_set_color",
+      "description": "Set the foreground paint color"
+    },
+    {
+      "name": "krita_set_brush",
+      "description": "Set brush preset and properties"
+    },
+    {
+      "name": "krita_stroke",
+      "description": "Paint a stroke through a series of points"
+    },
+    {
+      "name": "krita_bulk_strokes",
+      "description": "Draw multiple strokes in one operation for better performance"
+    },
+    {
+      "name": "krita_fill",
+      "description": "Fill a circular area with current color"
+    },
+    {
+      "name": "krita_draw_shape",
+      "description": "Draw geometric shapes (rectangle, ellipse, line)"
+    },
+    {
+      "name": "krita_undo",
+      "description": "Undo the last action"
+    },
+    {
+      "name": "krita_redo",
+      "description": "Redo the last undone action"
+    },
+    {
+      "name": "krita_clear",
+      "description": "Clear the canvas to a solid color"
+    },
+    {
+      "name": "krita_get_color_at",
+      "description": "Sample the color at a specific pixel (eyedropper)"
+    },
+    {
+      "name": "krita_list_brushes",
+      "description": "List available brush presets in Krita"
+    },
+    {
+      "name": "krita_list_layers",
+      "description": "List all layers with hierarchy, visibility, opacity, and active status (read-only)"
+    },
+    {
+      "name": "krita_get_canvas_info",
+      "description": "Get canvas dimensions, color mode, current frame, and animation metadata (read-only)"
+    },
+    {
+      "name": "krita_select_paint_layer",
+      "description": "Select the active paint layer for drawing operations"
+    },
+    {
+      "name": "krita_get_current_frame",
+      "description": "Get the current timeline frame and keyframes"
+    },
+    {
+      "name": "krita_set_current_frame",
+      "description": "Set the current timeline frame (move playhead)"
+    },
+    {
+      "name": "krita_create_keyframe",
+      "description": "Create an animation keyframe on the active paint layer"
+    },
+    {
+      "name": "krita_delete_keyframe",
+      "description": "Delete an animation keyframe"
+    },
+    {
+      "name": "krita_list_keyframes",
+      "description": "List all keyframes on the active paint layer"
+    },
+    {
+      "name": "krita_has_keyframe",
+      "description": "Check whether a keyframe exists at a specific frame"
+    },
+    {
+      "name": "krita_enable_onion",
+      "description": "Enable or disable onion skin preview"
+    },
+    {
+      "name": "krita_inspect_previous_frame",
+      "description": "Get a downsampled color grid of the previous frame"
+    }
+  ],
+  "tools_generated": false
+}
