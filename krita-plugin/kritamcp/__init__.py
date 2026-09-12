@@ -9,11 +9,40 @@ from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import QMessageBox, QApplication, QTableView, QDockWidget
 import json
 import threading
+import math
+import functools
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import os
 import sys
 import uuid
+
+try:
+    import numpy as np
+    _HAS_NUMPY = True
+except ImportError:
+    _HAS_NUMPY = False
+
+
+@functools.lru_cache(maxsize=64)
+def _make_stamp_mask(radius, hardness):
+    """Precompute a circular brush-stamp alpha mask (0..1), cached by (radius, hardness).
+
+    Unlike a boolean `dist <= radius` cutoff, this anti-aliases the outer rim over
+    ~1px so stroke edges aren't stair-stepped, while still respecting `hardness`
+    as the point at which the falloff begins (matches the previous behavior's
+    intent, just smoothed).
+    """
+    r = max(radius, 1)
+    yy, xx = np.mgrid[-r:r + 1, -r:r + 1]
+    dist = np.sqrt(xx.astype(np.float64) ** 2 + yy.astype(np.float64) ** 2)
+    hardness = min(max(hardness, 0.0), 1.0)
+    hard_r = hardness * r
+    denom = max(r - hard_r, 1e-6)
+    falloff = np.where(dist <= hard_r, 1.0, np.clip(1.0 - (dist - hard_r) / denom, 0.0, 1.0))
+    # 1px anti-aliased rim right at the true circle edge.
+    aa = np.clip(r + 0.5 - dist, 0.0, 1.0)
+    return (falloff * aa).astype(np.float32)
 
 # Logging utility - use stderr to avoid corrupting MCP stdio channel
 def log(message, request_id=None):
@@ -205,7 +234,7 @@ class PaintRequestHandler(BaseHTTPRequestHandler):
                     "create_frame", "select_frame", "get_current_frame",
                     "set_current_frame", "create_keyframe", "delete_keyframe", "list_keyframes", "has_keyframe",
                     "enable_onion", "inspect_previous_frame", "bulk_strokes",
-                    "list_layers", "get_canvas_info"
+                    "list_layers", "get_canvas_info", "draw_scene"
                 ]
             })
         else:
@@ -357,6 +386,8 @@ class KritaMCPExtension(Extension):
                 return self.cmd_enable_onion(params)
             elif action == "inspect_previous_frame":
                 return self.cmd_inspect_previous_frame(params)
+            elif action == "draw_scene":
+                return self.cmd_draw_scene(params, request_id)
             elif action == "bulk_strokes":
                 return self.cmd_bulk_strokes(params)
             elif action == "list_layers":
@@ -790,101 +821,11 @@ class KritaMCPExtension(Extension):
         if not view:
             return {"error": "No active view"}
 
-        # Get current foreground color
-        fg = view.foregroundColor()
-        qcolor = fg.colorForCanvas(view.canvas())
-        r, g, b = qcolor.red(), qcolor.green(), qcolor.blue()
+        result = self._draw_stroke_pixels(layer, doc, view, points, brush_size, hardness, opacity)
+        if "error" in result:
+            return result
 
-        width = doc.width()
-        height = doc.height()
-        radius = max(1, brush_size // 2)
-
-        # Calculate bounding box for all points plus brush radius
-        min_x = max(0, int(min(p[0] for p in points)) - radius - 2)
-        min_y = max(0, int(min(p[1] for p in points)) - radius - 2)
-        max_x = min(width, int(max(p[0] for p in points)) + radius + 2)
-        max_y = min(height, int(max(p[1] for p in points)) + radius + 2)
-
-        w = max_x - min_x
-        h = max_y - min_y
-
-        if w <= 0 or h <= 0:
-            return {"error": "Stroke out of bounds"}
-
-        # Get existing pixel data for the affected region
-        existing = layer.pixelData(min_x, min_y, w, h)
-        pixels = bytearray(existing)
-
-        import math
-
-        def draw_soft_circle(cx, cy, point_opacity=1.0):
-            """Draw a soft circle with falloff at canvas coordinates."""
-            for dy in range(-radius, radius + 1):
-                for dx in range(-radius, radius + 1):
-                    dist_sq = dx*dx + dy*dy
-                    if dist_sq <= radius*radius:
-                        px = int(cx) + dx - min_x
-                        py = int(cy) + dy - min_y
-                        if 0 <= px < w and 0 <= py < h:
-                            # Calculate distance from center (0.0 to 1.0)
-                            dist = math.sqrt(dist_sq) / radius if radius > 0 else 0
-
-                            # Apply hardness curve
-                            # hardness=1.0: sharp edge, hardness=0.0: gradual fade from center
-                            if hardness >= 1.0:
-                                alpha_factor = 1.0
-                            else:
-                                # Soft falloff: starts fading at hardness point
-                                if dist < hardness:
-                                    alpha_factor = 1.0
-                                else:
-                                    # Smooth falloff from hardness to edge
-                                    falloff = (dist - hardness) / (1.0 - hardness) if hardness < 1.0 else 0
-                                    alpha_factor = 1.0 - falloff
-
-                            final_alpha = int(255 * alpha_factor * opacity * point_opacity)
-
-                            if final_alpha > 0:
-                                idx = (py * w + px) * 4
-                                # Alpha blending with existing pixel
-                                existing_b = pixels[idx]
-                                existing_g = pixels[idx+1]
-                                existing_r = pixels[idx+2]
-                                existing_a = pixels[idx+3]
-
-                                # Simple alpha blend
-                                blend = final_alpha / 255.0
-                                new_r = int(existing_r * (1 - blend) + r * blend)
-                                new_g = int(existing_g * (1 - blend) + g * blend)
-                                new_b = int(existing_b * (1 - blend) + b * blend)
-                                new_a = max(existing_a, final_alpha)
-
-                                pixels[idx] = new_b
-                                pixels[idx+1] = new_g
-                                pixels[idx+2] = new_r
-                                pixels[idx+3] = new_a
-
-        def draw_line(x1, y1, x2, y2):
-            """Draw a line using interpolation with soft brush circles."""
-            dist = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-            # More steps for smoother lines
-            steps = max(1, int(dist / max(1, radius / 3)))
-
-            for i in range(steps + 1):
-                t = i / steps if steps > 0 else 0
-                x = x1 + t * (x2 - x1)
-                y = y1 + t * (y2 - y1)
-                draw_soft_circle(x, y)
-
-        # Draw soft circles at each point and lines between them
-        for i in range(len(points)):
-            draw_soft_circle(points[i][0], points[i][1])
-            if i > 0:
-                draw_line(points[i-1][0], points[i-1][1], points[i][0], points[i][1])
-
-        layer.setPixelData(bytes(pixels), min_x, min_y, w, h)
         doc.refreshProjection()
-
         return {"status": "ok", "points_count": len(points), "hardness": hardness}
     def cmd_fill(self, params):
         """Fill a circular area with current color."""
@@ -949,6 +890,10 @@ class KritaMCPExtension(Extension):
         width = params.get("width", 100)
         height = params.get("height", 100)
         fill = params.get("fill", True)
+        stroke = params.get("stroke", False)
+        x2 = params.get("x2")
+        y2 = params.get("y2")
+        line_width = params.get("line_width", 2)
 
         layer = self._ensure_active_paint_layer()
         if not layer:
@@ -965,11 +910,21 @@ class KritaMCPExtension(Extension):
         qcolor = fg.colorForCanvas(view.canvas())
         r, g, b = qcolor.red(), qcolor.green(), qcolor.blue()
 
+        result = self._draw_shape_pixels(
+            layer, doc, r, g, b, shape, x, y, width, height, fill, stroke, x2, y2, line_width
+        )
+        if "error" in result:
+            return result
+
+        doc.refreshProjection()
+        return result
+
+    def _draw_shape_pixels(self, layer, doc, r, g, b, shape, x, y, width, height,
+                            fill, stroke, x2=None, y2=None, line_width=2):
+        """Rasterize one shape onto layer's pixel data. Caller handles refreshProjection."""
         if shape == "line":
-            # Draw line using pixel data
-            x2 = params.get("x2", x + width)
-            y2 = params.get("y2", y + height)
-            line_width = params.get("line_width", 2)
+            x2 = x2 if x2 is not None else x + width
+            y2 = y2 if y2 is not None else y + height
 
             # Calculate bounding box
             x1_bound = max(0, int(min(x, x2)) - line_width)
@@ -1009,10 +964,10 @@ class KritaMCPExtension(Extension):
             # Draw filled rectangle using pixel data
             x1 = max(0, int(x))
             y1 = max(0, int(y))
-            x2 = min(doc.width(), int(x + width))
-            y2 = min(doc.height(), int(y + height))
-            w = x2 - x1
-            h = y2 - y1
+            x2b = min(doc.width(), int(x + width))
+            y2b = min(doc.height(), int(y + height))
+            w = x2b - x1
+            h = y2b - y1
 
             if w > 0 and h > 0:
                 pixel_data = bytes([b, g, r, 255] * (w * h))
@@ -1026,10 +981,10 @@ class KritaMCPExtension(Extension):
 
             x1 = max(0, int(x))
             y1 = max(0, int(y))
-            x2 = min(doc.width(), int(x + width))
-            y2 = min(doc.height(), int(y + height))
-            w = x2 - x1
-            h = y2 - y1
+            x2b = min(doc.width(), int(x + width))
+            y2b = min(doc.height(), int(y + height))
+            w = x2b - x1
+            h = y2b - y1
 
             if w > 0 and h > 0:
                 existing = layer.pixelData(x1, y1, w, h)
@@ -1050,8 +1005,6 @@ class KritaMCPExtension(Extension):
                 layer.setPixelData(bytes(pixels), x1, y1, w, h)
         else:
             return {"error": f"Shape '{shape}' with current options not supported"}
-
-        doc.refreshProjection()
 
         return {"status": "ok", "shape": shape}
 
@@ -1626,6 +1579,29 @@ class KritaMCPExtension(Extension):
             except Exception as e:
                 return {"error": f"Invalid color {color_hex}: {e}"}
 
+        points, error = self._sample_bezier_segments(segments, samples)
+        if error:
+            return {"error": error}
+
+        result = self._draw_stroke_pixels(
+            layer, doc, view, points, brush_size, hardness, opacity
+        )
+        if "error" in result:
+            return result
+
+        doc.refreshProjection()
+        return {
+            "status": "ok",
+            "segments_drawn": len(segments),
+            "points_sampled": len(points),
+            "errors": None
+        }
+
+    def _sample_bezier_segments(self, segments, samples):
+        """Sample connected cubic Bezier segments into a flat polyline.
+
+        Returns (points, None) on success or (None, error_message) on failure.
+        """
         points = []
         try:
             for index, segment in enumerate(segments):
@@ -1637,7 +1613,7 @@ class KritaMCPExtension(Extension):
                 if index and points:
                     previous = points[-1]
                     if abs(previous[0] - start[0]) > 1e-6 or abs(previous[1] - start[1]) > 1e-6:
-                        return {"error": f"Segment {index} is not connected to the previous segment"}
+                        return None, f"Segment {index} is not connected to the previous segment"
 
                 for step in range(samples + 1):
                     if index and step == 0:
@@ -1655,21 +1631,9 @@ class KritaMCPExtension(Extension):
                         + t ** 3 * end[1]
                     ])
         except (KeyError, TypeError, ValueError, IndexError) as e:
-            return {"error": f"Invalid path segment: {e}"}
+            return None, f"Invalid path segment: {e}"
 
-        result = self._draw_stroke_pixels(
-            layer, doc, view, points, brush_size, hardness, opacity
-        )
-        if "error" in result:
-            return result
-
-        doc.refreshProjection()
-        return {
-            "status": "ok",
-            "segments_drawn": len(segments),
-            "points_sampled": len(points),
-            "errors": None
-        }
+        return points, None
 
     def cmd_bulk_strokes(self, params):
         """
@@ -1760,40 +1724,274 @@ class KritaMCPExtension(Extension):
         }
         
         return result
-    
+
+    def cmd_draw_scene(self, params, request_id=None):
+        """
+        Execute a batch of heterogeneous geometry elements (paths, strokes, shapes)
+        as one document-level operation with a single projection refresh.
+
+        This is a deterministic executor only: Claude supplies fully explicit
+        geometry (points, control points, color, width, opacity, hardness) per
+        element, in the order it should be drawn. The MCP does not interpret,
+        plan, or decide any of that content - it just draws exactly what it is
+        given, in one round trip instead of one call per element.
+
+        elements: list of dicts, each with a "type":
+          - "path":   {segments: [...bezier segments like draw_path...], color,
+                       brush_size, opacity, hardness, samples_per_segment}
+          - "stroke": {points: [[x,y], ...], color, brush_size, opacity, hardness}
+          - "shape":  {shape: rectangle|ellipse|line, x, y, width, height, fill,
+                       stroke, x2, y2, line_width, color}
+        layer (optional): paint layer name to draw all elements onto; created if
+          it doesn't exist yet. Omit to use the currently active paint layer.
+        """
+        elements = params.get("elements", [])
+        if not elements:
+            return {"error": "No elements provided"}
+
+        doc = self.get_active_document()
+        if not doc:
+            return {"error": "No active document"}
+
+        layer_name = params.get("layer")
+        if layer_name:
+            layer = self._ensure_named_paint_layer(doc, layer_name)
+        else:
+            layer = self._ensure_active_paint_layer()
+        if not layer:
+            return {"error": "No active paint layer"}
+
+        view = self.get_active_view()
+        if not view:
+            return {"error": "No active view"}
+
+        results = []
+        drawn = 0
+        failed = 0
+
+        for index, element in enumerate(elements):
+            elem_type = element.get("type", "stroke")
+            try:
+                color_hex = element.get("color")
+                if color_hex:
+                    color = QColor(color_hex)
+                    if not color.isValid():
+                        raise ValueError(f"Invalid color {color_hex}")
+                    view.setForeGroundColor(ManagedColor.fromQColor(color, view.canvas()))
+
+                if elem_type == "path":
+                    samples = max(4, min(128, int(element.get("samples_per_segment", 24))))
+                    path_points, error = self._sample_bezier_segments(element.get("segments", []), samples)
+                    if error:
+                        raise ValueError(error)
+                    brush_size = element.get("brush_size", element.get("width", self.current_brush_size))
+                    opacity = float(element.get("opacity", 1.0))
+                    hardness = float(element.get("hardness", 0.5))
+                    draw_result = self._draw_stroke_pixels(layer, doc, view, path_points, brush_size, hardness, opacity)
+                    if "error" in draw_result:
+                        raise ValueError(draw_result["error"])
+                    results.append({"index": index, "type": "path", "status": "ok", "points_sampled": len(path_points)})
+
+                elif elem_type == "stroke":
+                    stroke_points = element.get("points", [])
+                    if len(stroke_points) < 2:
+                        raise ValueError("Need at least 2 points for a stroke")
+                    brush_size = element.get("brush_size", element.get("width", self.current_brush_size))
+                    opacity = float(element.get("opacity", 1.0))
+                    hardness = float(element.get("hardness", 0.5))
+                    draw_result = self._draw_stroke_pixels(layer, doc, view, stroke_points, brush_size, hardness, opacity)
+                    if "error" in draw_result:
+                        raise ValueError(draw_result["error"])
+                    results.append({"index": index, "type": "stroke", "status": "ok", "points_count": len(stroke_points)})
+
+                elif elem_type == "shape":
+                    fg = view.foregroundColor()
+                    qcolor = fg.colorForCanvas(view.canvas())
+                    r, g, b = qcolor.red(), qcolor.green(), qcolor.blue()
+                    shape_result = self._draw_shape_pixels(
+                        layer, doc, r, g, b,
+                        element.get("shape", "rectangle"),
+                        element.get("x", 0), element.get("y", 0),
+                        element.get("width", 100), element.get("height", 100),
+                        element.get("fill", True), element.get("stroke", False),
+                        element.get("x2"), element.get("y2"),
+                        element.get("line_width", 2)
+                    )
+                    if "error" in shape_result:
+                        raise ValueError(shape_result["error"])
+                    results.append({"index": index, "type": "shape", "status": "ok"})
+
+                else:
+                    raise ValueError(f"Unknown element type '{elem_type}'")
+
+                drawn += 1
+            except Exception as e:
+                failed += 1
+                results.append({"index": index, "type": elem_type, "status": "error", "error": str(e)})
+
+        doc.refreshProjection()
+
+        return {
+            "status": "ok" if failed == 0 else "partial",
+            "elements_drawn": drawn,
+            "elements_failed": failed,
+            "total_elements": len(elements),
+            "layer_name": layer.name(),
+            "results": results
+        }
+
+    def _ensure_named_paint_layer(self, doc, name):
+        """Find a paint layer by name (creating it if needed) and activate it."""
+        root = doc.rootNode()
+
+        def find(node):
+            for child in node.childNodes() or []:
+                try:
+                    if child.name() == name and child.type() == "paintlayer":
+                        return child
+                except Exception:
+                    pass
+                found = find(child)
+                if found:
+                    return found
+            return None
+
+        layer = find(root)
+        if not layer:
+            layer = doc.createNode(name, "paintlayer")
+            root.addChildNode(layer, None)
+        doc.setActiveNode(layer)
+        return layer
+
     def _draw_stroke_pixels(self, layer, doc, view, points, brush_size, hardness, opacity):
         """
-        Internal method to draw a stroke using pixel operations.
-        
-        Extracted from cmd_stroke to be reusable by cmd_bulk_strokes.
+        Draw a stroke (already-flattened polyline) using pixel operations.
+
+        Shared by cmd_stroke, cmd_bulk_strokes, cmd_draw_path, and cmd_draw_scene
+        so every drawing tool renders through one code path. Prefers a vectorized
+        numpy implementation (fast, anti-aliased edges); falls back to the
+        original scalar per-pixel loop if numpy is unavailable or errors.
         """
-        import math
-        
+        if _HAS_NUMPY:
+            try:
+                return self._draw_stroke_pixels_np(layer, doc, view, points, brush_size, hardness, opacity)
+            except Exception as e:
+                log(f"_draw_stroke_pixels: numpy path failed ({e}), falling back to scalar renderer")
+        return self._draw_stroke_pixels_scalar(layer, doc, view, points, brush_size, hardness, opacity)
+
+    def _draw_stroke_pixels_np(self, layer, doc, view, points, brush_size, hardness, opacity):
+        """Vectorized stroke rasterizer: one cached anti-aliased mask, stamped via numpy slicing."""
+        fg = view.foregroundColor()
+        qcolor = fg.colorForCanvas(view.canvas())
+        col_r, col_g, col_b = qcolor.red(), qcolor.green(), qcolor.blue()
+
+        canvas_w = doc.width()
+        canvas_h = doc.height()
+        radius = max(1, brush_size // 2)
+
+        min_x = max(0, int(min(p[0] for p in points)) - radius - 2)
+        min_y = max(0, int(min(p[1] for p in points)) - radius - 2)
+        max_x = min(canvas_w, int(max(p[0] for p in points)) + radius + 2)
+        max_y = min(canvas_h, int(max(p[1] for p in points)) + radius + 2)
+
+        w = max_x - min_x
+        h = max_y - min_y
+        if w <= 0 or h <= 0:
+            return {"error": "Stroke out of bounds"}
+
+        existing = layer.pixelData(min_x, min_y, w, h)
+        pixels = np.frombuffer(existing, dtype=np.uint8).reshape(h, w, 4).copy()
+
+        mask = _make_stamp_mask(radius, round(float(hardness), 3))
+        mask_size = mask.shape[0]
+        opacity = float(opacity)
+
+        # Densify consecutive points so fast-moving segments don't leave gaps
+        # between stamps (mirrors the previous draw_line interpolation).
+        stamped = []
+        step_limit = max(1, radius // 3)
+        for i, p in enumerate(points):
+            if i > 0:
+                x1, y1 = points[i - 1]
+                x2, y2 = p
+                dist = math.hypot(x2 - x1, y2 - y1)
+                steps = max(1, int(dist / step_limit))
+                for s in range(1, steps + 1):
+                    t = s / steps
+                    stamped.append((x1 + t * (x2 - x1), y1 + t * (y2 - y1)))
+            else:
+                stamped.append((p[0], p[1]))
+
+        color_bgr = np.array([col_b, col_g, col_r], dtype=np.float32)
+
+        for cx, cy in stamped:
+            cx = int(round(cx))
+            cy = int(round(cy))
+
+            tx0 = cx - radius - min_x
+            ty0 = cy - radius - min_y
+
+            src_x0 = max(0, -tx0)
+            src_y0 = max(0, -ty0)
+            dst_x0 = max(0, tx0)
+            dst_y0 = max(0, ty0)
+            dst_x1 = min(w, tx0 + mask_size)
+            dst_y1 = min(h, ty0 + mask_size)
+
+            if dst_x1 <= dst_x0 or dst_y1 <= dst_y0:
+                continue
+
+            src_x1 = src_x0 + (dst_x1 - dst_x0)
+            src_y1 = src_y0 + (dst_y1 - dst_y0)
+
+            alpha = mask[src_y0:src_y1, src_x0:src_x1] * opacity
+            if alpha.size == 0:
+                continue
+            alpha3 = alpha[..., None]
+
+            region = pixels[dst_y0:dst_y1, dst_x0:dst_x1]
+            existing_bgr = region[..., :3].astype(np.float32)
+            blended_bgr = existing_bgr * (1.0 - alpha3) + color_bgr * alpha3
+
+            existing_a = region[..., 3].astype(np.float32)
+            new_a = np.maximum(existing_a, alpha * 255.0)
+
+            region[..., :3] = blended_bgr.astype(np.uint8)
+            region[..., 3] = new_a.astype(np.uint8)
+
+        layer.setPixelData(pixels.tobytes(), min_x, min_y, w, h)
+        return {"status": "ok", "points_count": len(points)}
+
+    def _draw_stroke_pixels_scalar(self, layer, doc, view, points, brush_size, hardness, opacity):
+        """
+        Original pure-Python per-pixel stroke rasterizer. Kept as a fallback for
+        environments where numpy is unavailable in Krita's bundled Python.
+        """
         # Get current foreground color
         fg = view.foregroundColor()
         qcolor = fg.colorForCanvas(view.canvas())
         r, g, b = qcolor.red(), qcolor.green(), qcolor.blue()
-        
+
         width = doc.width()
         height = doc.height()
         radius = max(1, brush_size // 2)
-        
+
         # Calculate bounding box for all points plus brush radius
         min_x = max(0, int(min(p[0] for p in points)) - radius - 2)
         min_y = max(0, int(min(p[1] for p in points)) - radius - 2)
         max_x = min(width, int(max(p[0] for p in points)) + radius + 2)
         max_y = min(height, int(max(p[1] for p in points)) + radius + 2)
-        
+
         w = max_x - min_x
         h = max_y - min_y
-        
+
         if w <= 0 or h <= 0:
             return {"error": "Stroke out of bounds"}
-        
+
         # Get existing pixel data for the affected region
         existing = layer.pixelData(min_x, min_y, w, h)
         pixels = bytearray(existing)
-        
+
         def draw_soft_circle(cx, cy, point_opacity=1.0):
             """Draw a soft circle with falloff at canvas coordinates."""
             for dy in range(-radius, radius + 1):

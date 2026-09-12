@@ -93,6 +93,14 @@
       "description": "Draw multiple strokes in one operation for better performance"
     },
     {
+      "name": "krita_draw_path",
+      "description": "Draw connected cubic Bezier segments as one deterministic path"
+    },
+    {
+      "name": "krita_draw_scene",
+      "description": "Execute a full geometry plan (paths, strokes, shapes) as one batched operation"
+    },
+    {
       "name": "krita_fill",
       "description": "Fill a circular area with current color"
     },

@@ -636,6 +636,79 @@ def krita_bulk_strokes(strokes: list[dict]) -> dict:
     }
 
 
+@mcp.tool()
+def krita_draw_scene(elements: list[dict], layer: Optional[str] = None) -> dict:
+    """
+    Execute a complete, explicit geometry plan as ONE Krita operation.
+
+    This is the primary tool for drawing a whole character/scene efficiently:
+    build the full list of geometry elements yourself (paths, strokes, shapes)
+    with their exact points, colors, widths, opacity, hardness, and drawing
+    order, then send them all in a single call. Krita executes precisely what
+    you specify - it does not infer, adjust, or interpret shapes. One call
+    here replaces what would otherwise be many separate krita_draw_path /
+    krita_bulk_strokes / krita_draw_shape calls, cutting round trips and
+    canvas refreshes from one-per-element to one total.
+
+    Args:
+        elements: Ordered list of geometry elements (drawn in list order).
+            Each element is a dict with a "type" key:
+
+            type="path" (connected cubic Bezier segments, like krita_draw_path):
+                segments: [{start, control1, control2, end}, ...] each [x, y]
+                color: hex color (optional, defaults to current foreground)
+                brush_size / width: line thickness in pixels
+                opacity: 0.0-1.0
+                hardness: 0.0 (soft) - 1.0 (hard edge)
+                samples_per_segment: Bezier sampling density (default 24)
+
+            type="stroke" (straight/polyline, like krita_stroke):
+                points: [[x, y], ...] (at least 2)
+                color, brush_size / width, opacity, hardness: same as above
+
+            type="shape" (like krita_draw_shape):
+                shape: "rectangle" | "ellipse" | "line"
+                x, y, width, height, fill, stroke, x2, y2, line_width, color
+
+        layer: Optional paint layer name to draw all these elements onto.
+            Created automatically if it doesn't exist yet. Omit to draw on
+            whichever paint layer is currently active. Use this to keep
+            distinct parts (e.g. one body part per layer) separable for
+            later reuse, without the MCP deciding what belongs where.
+
+    Returns per-element results so you can tell exactly which elements drew
+    successfully and which failed, plus overall counts.
+
+    Use krita_get_canvas afterward to visually inspect the result. For small
+    corrections, prefer another krita_draw_scene call with just the changed
+    elements over redrawing everything.
+    """
+    log(f"[draw_scene] Processing {len(elements)} elements" + (f" on layer '{layer}'" if layer else ""))
+
+    timeout = max(60.0, len(elements) * 1.0)
+    params = {"elements": elements}
+    if layer:
+        params["layer"] = layer
+
+    result = send_command("draw_scene", params, timeout=timeout)
+
+    if "error" in result:
+        log(f"[draw_scene] Error: {result['error']}")
+        return result
+
+    log(f"[draw_scene] Success: {result.get('elements_drawn', 0)} elements drawn")
+
+    return {
+        "success": result.get("status") == "ok",
+        "operation": "draw_scene",
+        "elements_drawn": result.get("elements_drawn", 0),
+        "elements_failed": result.get("elements_failed", 0),
+        "total_elements": result.get("total_elements", len(elements)),
+        "layer_name": result.get("layer_name"),
+        "results": result.get("results")
+    }
+
+
 # ==============================================================================
 # EDITING TOOLS
 # ==============================================================================
