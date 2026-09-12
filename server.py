@@ -233,7 +233,8 @@ def krita_new_canvas(
     width: int = 800,
     height: int = 600,
     name: str = "New Canvas",
-    background: str = "#1a1a2e"
+    background: str = "#1a1a2e",
+    frame_rate: Optional[int] = None
 ) -> dict:
     """
     Create a new canvas in Krita.
@@ -243,22 +244,28 @@ def krita_new_canvas(
         height: Canvas height in pixels (default 600)
         name: Document name
         background: Background color as hex (default dark blue #1a1a2e)
-        
+        frame_rate: Optional animation frame rate (fps) for the new document.
+            Omit to leave Krita's default.
+
     Creates a new document with a paint layer ready for drawing.
     """
     request_id = str(uuid.uuid4())[:8]
     log(f"krita_new_canvas[{request_id}]: {width}x{height}")
-    
-    result = send_command("new_canvas", {
+
+    params = {
         "width": width,
         "height": height,
         "name": name,
         "background": background
-    }, request_id=request_id)
+    }
+    if frame_rate is not None:
+        params["frame_rate"] = frame_rate
+
+    result = send_command("new_canvas", params, request_id=request_id)
 
     if "error" in result or "error_type" in result:
         return result
-    
+
     return {
         "success": True,
         "operation": "create_canvas",
@@ -266,6 +273,7 @@ def krita_new_canvas(
         "height": height,
         "name": name,
         "background": background,
+        "frame_rate": result.get("frame_rate"),
         "verified": result.get("verified", False),
         "request_id": request_id
     }

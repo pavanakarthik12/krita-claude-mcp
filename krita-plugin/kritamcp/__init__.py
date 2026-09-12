@@ -699,6 +699,7 @@ class KritaMCPExtension(Extension):
         height = params.get("height", 600)
         name = params.get("name", "New Canvas")
         bg_color = params.get("background", "#1a1a2e")
+        frame_rate = params.get("frame_rate")  # optional; None = leave Krita's default
         if width < 1 or width > 10000:
             return {"error_type": "INVALID_DIMENSIONS", "message": f"Invalid width: {width}", "recoverable": True, "request_id": request_id}
         if height < 1 or height > 10000:
@@ -736,7 +737,16 @@ class KritaMCPExtension(Extension):
         actual_height = doc.height()
         if actual_width != width or actual_height != height:
             return {"error_type": "DIMENSION_MISMATCH", "message": "Dimension mismatch", "requested_width": width, "requested_height": height, "actual_width": actual_width, "actual_height": actual_height, "recoverable": False, "request_id": request_id}
-        return {"status": "ok", "width": actual_width, "height": actual_height, "name": name, "layer_name": actual_layer.name(), "verified": True, "request_id": request_id}
+        actual_frame_rate = None
+        if frame_rate:
+            try:
+                doc.setFramesPerSecond(int(frame_rate))
+            except Exception as e:
+                return {"error_type": "FRAME_RATE_SET_FAILED", "message": f"Failed to set frame rate: {e}", "recoverable": True, "request_id": request_id}
+            actual_frame_rate = int(doc.framesPerSecond())
+            if actual_frame_rate != int(frame_rate):
+                return {"error_type": "FRAME_RATE_MISMATCH", "message": "Frame rate mismatch", "requested_frame_rate": frame_rate, "actual_frame_rate": actual_frame_rate, "recoverable": False, "request_id": request_id}
+        return {"status": "ok", "width": actual_width, "height": actual_height, "name": name, "layer_name": actual_layer.name(), "frame_rate": actual_frame_rate, "verified": True, "request_id": request_id}
 
     def cmd_select_paint_layer(self, params, request_id=None):
         """P0.2: Select active paint layer WITH VERIFICATION."""
