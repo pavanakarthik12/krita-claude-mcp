@@ -1,0 +1,13 @@
+{
+  "root": 0,
+  "torso": 1,
+  "head": 2,
+  "thigh_back": 3,
+  "shin_back": 4,
+  "thigh_front": 5,
+  "shin_front": 6,
+  "upper_arm_back": 7,
+  "forearm_back": 8,
+  "upper_arm_front": 9,
+  "forearm_front": 10
+}

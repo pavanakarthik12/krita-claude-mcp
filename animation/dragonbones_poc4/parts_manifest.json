@@ -1,0 +1,58 @@
+{
+  "parts": [
+    {
+      "component": "head",
+      "bone": "head",
+      "file": "parts/head.png",
+      "width": 362,
+      "height": 360,
+      "pivot_x": 188.3124,
+      "pivot_y": 175.6826
+    },
+    {
+      "component": "torso",
+      "bone": "torso",
+      "file": "parts/torso.png",
+      "width": 150,
+      "height": 368,
+      "pivot_x": 64.5556,
+      "pivot_y": 219.6731
+    },
+    {
+      "component": "front_hand",
+      "bone": "forearm_front",
+      "file": "parts/front_hand.png",
+      "width": 72,
+      "height": 74,
+      "pivot_x": 105.5,
+      "pivot_y": -112.3308
+    },
+    {
+      "component": "back_hand",
+      "bone": "forearm_back",
+      "file": "parts/back_hand.png",
+      "width": 72,
+      "height": 74,
+      "pivot_x": -51.5,
+      "pivot_y": -87.3562
+    },
+    {
+      "component": "front_foot",
+      "bone": "shin_front",
+      "file": "parts/front_foot.png",
+      "width": 132,
+      "height": 149,
+      "pivot_x": 151.7311,
+      "pivot_y": -95.2214
+    },
+    {
+      "component": "back_foot",
+      "bone": "shin_back",
+      "file": "parts/back_foot.png",
+      "width": 171,
+      "height": 117,
+      "pivot_x": -51.9143,
+      "pivot_y": -85.843
+    }
+  ]
+}
