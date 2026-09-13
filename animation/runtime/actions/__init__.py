@@ -5,6 +5,7 @@ from .stand import StandAction
 from .sit import SitAction
 from .wave import WaveAction
 from .turn import TurnAction
+from .stop import StopAction
 
 __all__ = [
     "Action",
@@ -14,4 +15,5 @@ __all__ = [
     "SitAction",
     "WaveAction",
     "TurnAction",
+    "StopAction",
 ]

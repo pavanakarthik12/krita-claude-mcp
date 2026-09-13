@@ -21,6 +21,93 @@ DEFAULT_LOCK_PATH = os.path.normpath(os.path.join(HERE, "..", "data", "character
 # (POC #4's individual-limb tests + this system's own action set).
 AVAILABLE_ACTIONS = ("idle", "walk", "stand", "sit", "wave", "turn")
 
+# bend_sign per leg for the closed-form 2-bone IK fallback (see
+# ik2bone.py) - chosen to match each leg's own natural knee direction and
+# confirmed by rendering (see the Phase 2 final report).
+LEG_BEND_SIGN = {"front": 1.0, "back": -1.0}
+
+
+def compute_rest_positions(ske_json: dict) -> dict:
+    """Every bone's rest GLOBAL position in the armature's own rig
+    coordinate system, computed purely from character_ske.json's own
+    numbers (no DragonBones runtime involved).
+
+    This relies on a fact established and verified in POC #2/#4: each
+    bone's local transform.x/y was deliberately computed as the parent-
+    child pivot delta PRE-ROTATED by the negative of the parent's own
+    accumulated rest rotation (see convert_character_to_mesh.py's
+    build_bones_json / rotate_pt usage). That pre-rotation exists
+    specifically so that, combined with DragonBones' own matrix
+    composition (child.global = parent.globalMatrix * local_offset), the
+    parent's rotation cancels back out - meaning a bone's rest GLOBAL
+    position is simply the running SUM of local offsets down the chain,
+    with no further rotation needed here. This was verified in POC #2 via
+    a direct numerical round-trip against the Character Lock's raw
+    rest_pivot values.
+    """
+    bones = {b["name"]: b for b in ske_json["armature"][0]["bone"]}
+    positions = {}
+
+    def resolve(name):
+        if name in positions:
+            return positions[name]
+        b = bones[name]
+        t = b["transform"]
+        if "parent" not in b:
+            positions[name] = (t["x"], t["y"])
+        else:
+            px, py = resolve(b["parent"])
+            positions[name] = (px + t.get("x", 0.0), py + t.get("y", 0.0))
+        return positions[name]
+
+    for name in bones:
+        resolve(name)
+    return positions
+
+
+def compute_rest_tip(ske_json: dict, bone_name: str) -> Tuple[float, float]:
+    """The bone's rest-pose far end ("tip"): its rest global position plus
+    its own length along its own rest rotation direction."""
+    import math
+
+    bones = {b["name"]: b for b in ske_json["armature"][0]["bone"]}
+    positions = compute_rest_positions(ske_json)
+    b = bones[bone_name]
+    x, y = positions[bone_name]
+    length = b.get("length", 0.0)
+    rot_deg = b["transform"].get("skX", 0.0)
+    rad = math.radians(rot_deg)
+    return (x + length * math.cos(rad), y + length * math.sin(rad))
+
+
+def compute_leg_geometry(ske_json: dict) -> dict:
+    """Static per-leg geometry (hip position, bone lengths, rest angle,
+    bend direction) the closed-form 2-bone IK solver (ik2bone.py) needs -
+    see character_asset.py's LEG_BEND_SIGN and CharacterAsset.load()."""
+    import math
+
+    from .ik2bone import LegGeometry
+
+    bones = {b["name"]: b for b in ske_json["armature"][0]["bone"]}
+    positions = compute_rest_positions(ske_json)
+
+    legs = {}
+    for side, thigh_name, shin_name in (
+        ("front", "thigh_front", "shin_front"),
+        ("back", "thigh_back", "shin_back"),
+    ):
+        hip_x, hip_y = positions[thigh_name]
+        rest_angle_rad = math.radians(bones[thigh_name]["transform"].get("skX", 0.0))
+        legs[side] = LegGeometry(
+            hip_x=hip_x,
+            hip_y=hip_y,
+            upper_length=bones[thigh_name].get("length", 0.0),
+            lower_length=bones[shin_name].get("length", 0.0),
+            rest_angle_rad=rest_angle_rad,
+            bend_sign=LEG_BEND_SIGN[side],
+        )
+    return legs
+
 
 @dataclass
 class CharacterAsset:
@@ -34,6 +121,10 @@ class CharacterAsset:
     rigid_part_names: Tuple[str, ...] = field(default_factory=tuple)
     available_actions: Tuple[str, ...] = AVAILABLE_ACTIONS
     views: Tuple[str, ...] = ("front",)
+    # Phase 2B: static per-leg geometry for the closed-form 2-bone IK
+    # fallback (see ik2bone.py's module docstring for why it's a fallback
+    # rather than DragonBones' own IK constraint), keyed "front"/"back".
+    leg_geometry: dict = field(default_factory=dict)
 
     @staticmethod
     def load(
@@ -64,6 +155,8 @@ class CharacterAsset:
             manifest = json.load(f)
         rigid_part_names = tuple(p["component"] for p in manifest["parts"])
 
+        leg_geometry = compute_leg_geometry(ske)
+
         return CharacterAsset(
             name=name,
             character_lock_path=lock_path,
@@ -73,6 +166,7 @@ class CharacterAsset:
             bone_names=bone_names,
             mesh_slot_names=mesh_slot_names,
             rigid_part_names=rigid_part_names,
+            leg_geometry=leg_geometry,
         )
 
     def dimensions(self) -> dict:

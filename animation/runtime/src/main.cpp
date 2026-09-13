@@ -325,9 +325,25 @@ int main(int argc, char** argv)
     fs::create_directories(outDir);
     fs::create_directories(outDir + "/dump");
 
+    // Phase 2B note: DragonBones' native IK constraint system was tried
+    // here (see build_ik_skeleton.py / ik_probe.py) and empirically found
+    // incompatible with this asset's "inheritRotation: false" leg bones
+    // (POC #2's deliberate convention so pose code can write pure rotation
+    // DELTAS without hand-composing FK) - IKConstraint::_computeB assumes
+    // standard rotation INHERITANCE down the thigh->shin chain, and with
+    // it disabled the solve produced a visibly contorted leg even at the
+    // target's own rest position. Reworking the whole skeleton's rotation
+    // convention to satisfy the native IK constraint was out of scope for
+    // this phase's time budget, so foot-contact IK is computed instead as
+    // a standard closed-form 2-bone (law of cosines) solve in the Python
+    // action layer (see actions/walk.py's _solve_2bone_ik) and applied
+    // through this exact same, unmodified bone-rotation pipeline - see the
+    // final report for the full account. This adapter therefore still
+    // loads POC #4's plain, unmodified skeleton.
+    const std::string skePath = argc > 3 ? argv[3] : "../dragonbones_poc4/character_ske.json";
     CharacterAsset asset;
     if (!asset.load(
-            "../dragonbones_poc4/character_ske.json",
+            skePath,
             "../dragonbones_poc4/parts_manifest.json",
             "../dragonbones_poc4/parts"))
     {

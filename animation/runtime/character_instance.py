@@ -34,12 +34,18 @@ class CharacterInstance:
 
     def evaluate(self, time: float) -> dict:
         """Returns this instance's full state at `time`: world position,
-        heading, and pose. Does not render anything."""
-        pose: Pose = self.timeline.evaluate(time)
-        heading = pose.heading if pose.heading is not None else self.heading
+        heading, and pose. Does not render anything.
+
+        Position = this instance's fixed base position PLUS the timeline's
+        cumulative world_delta(time) (Phase 2A locomotion) - character
+        LOCAL pose (bone rotations) and WORLD position are kept on two
+        entirely separate channels, per requirement."""
+        pose: Pose = self.timeline.evaluate(time, context={"asset": self.asset})
+        dx, dy = self.timeline.world_delta(time)
+        heading = self.timeline.heading_at(time, self.heading)
         return {
             "instance_id": self.instance_id,
-            "position": (self.world_x, self.world_y),
+            "position": (self.world_x + dx, self.world_y + dy),
             "scale": self.scale,
             "heading": heading,
             "time": time,

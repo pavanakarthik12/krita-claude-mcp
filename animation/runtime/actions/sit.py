@@ -22,7 +22,7 @@ class SitAction(Action):
         "thigh_front", "shin_front", "thigh_back", "shin_back",
     )
 
-    def evaluate(self, time: float, params: dict) -> Pose:
+    def evaluate(self, time: float, params: dict, context=None) -> Pose:
         duration = params.get("duration", 1.0)
         mode = params.get("mode", "down")  # "down": stand->sit, "up": sit->stand
 

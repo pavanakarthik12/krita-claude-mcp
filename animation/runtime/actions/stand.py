@@ -8,5 +8,5 @@ from ..pose import Pose
 class StandAction(Action):
     affected_bones = ()  # touches every bone (returns to rest everywhere)
 
-    def evaluate(self, time: float, params: dict) -> Pose:
+    def evaluate(self, time: float, params: dict, context=None) -> Pose:
         return Pose.identity()

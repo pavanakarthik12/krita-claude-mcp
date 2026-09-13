@@ -60,12 +60,19 @@ def test_action_transitions_are_correct_at_boundaries():
     assert "thigh_front" not in state["c1"]["pose"].bones  # still idle
 
 
-def test_walk_changes_position_is_a_scene_level_concept_here():
-    # In this POC the walk action animates in place (POC #4's own finding);
-    # world position is advanced by the caller/scene setup, not by the
-    # action itself. This test documents that boundary explicitly instead
-    # of silently assuming locomotion.
-    scene = _build_scene()
-    p0 = scene.evaluate(2.0)["c1"]["position"]
-    p1 = scene.evaluate(4.0)["c1"]["position"]
-    assert p0 == p1 == (300.0, 650.0)
+def test_walk_changes_position_deterministically():
+    # Phase 2A: walking now advances world position through a SEPARATE
+    # channel (Action.world_delta), never baked into bone geometry - c1's
+    # walk segment runs from t=2 to t=5 at the default speed (90 units/s),
+    # so position at any t in that window is a pure, predictable function
+    # of elapsed local time, and re-evaluating the same scene/time always
+    # agrees.
+    scene_a = _build_scene()
+    scene_b = _build_scene()
+
+    p_before = scene_a.evaluate(2.0)["c1"]["position"]
+    p_mid = scene_a.evaluate(4.0)["c1"]["position"]
+    assert p_before == (300.0, 650.0)  # walk hasn't started moving yet
+    assert p_mid == (300.0 + 90.0 * 2.0, 650.0)  # 2s into the walk segment
+
+    assert scene_a.evaluate(4.0)["c1"]["position"] == scene_b.evaluate(4.0)["c1"]["position"]

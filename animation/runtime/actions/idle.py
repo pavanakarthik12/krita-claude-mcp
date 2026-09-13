@@ -12,7 +12,7 @@ TWO_PI = 2.0 * math.pi
 class IdleAction(Action):
     affected_bones = ("torso", "head")
 
-    def evaluate(self, time: float, params: dict) -> Pose:
+    def evaluate(self, time: float, params: dict, context=None) -> Pose:
         breath_hz = params.get("breath_rate", 0.25)
         amplitude = params.get("amplitude", 1.5)
         phase = TWO_PI * breath_hz * time

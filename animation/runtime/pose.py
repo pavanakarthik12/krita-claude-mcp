@@ -52,6 +52,34 @@ class Pose:
         return {name: chan.rotation_deg for name, chan in self.bones.items()}
 
     @staticmethod
+    def lerp(a: "Pose", b: "Pose", alpha: float) -> "Pose":
+        """Full bone-by-bone linear interpolation between two poses over
+        the UNION of bones each one touches (a bone only one side mentions
+        is treated as 0 rotation/translation on the other side) - this is
+        the generic mechanism Phase 2D's transition blending uses to avoid
+        popping at an action-to-action seam, deliberately distinct from
+        Pose.merge (a masked override, used for overlays like wave)."""
+        alpha = max(0.0, min(1.0, alpha))
+        result = Pose()
+        for name in set(a.bones) | set(b.bones):
+            ca = a.bones.get(name, BoneChannel())
+            cb = b.bones.get(name, BoneChannel())
+            rot = ca.rotation_deg + (cb.rotation_deg - ca.rotation_deg) * alpha
+            tx = ca.translation[0] + (cb.translation[0] - ca.translation[0]) * alpha
+            ty = ca.translation[1] + (cb.translation[1] - ca.translation[1]) * alpha
+            result.bones[name] = BoneChannel(rotation_deg=rot, translation=(tx, ty))
+
+        if a.heading is not None and b.heading is not None:
+            result.heading = a.heading + (b.heading - a.heading) * alpha
+        elif b.heading is not None:
+            result.heading = b.heading
+        else:
+            result.heading = a.heading
+
+        result.ik = dict(b.ik) if alpha >= 0.5 else dict(a.ik)
+        return result
+
+    @staticmethod
     def merge(base: "Pose", overlay: "Pose", bone_mask: Tuple[str, ...]) -> "Pose":
         """Returns a new Pose: base's bones everywhere, except the bones in
         bone_mask which - if the overlay actually sets them - come from the

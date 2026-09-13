@@ -53,5 +53,7 @@ def test_bake_frame_contains_bone_rotations_and_position():
         frame8 = baked["frames"][8]
         assert "thigh_front" in frame8["walker"]["boneRotationDeg"]
         assert frame8["stander"]["boneRotationDeg"] == {}
-        assert frame8["walker"]["x"] == 300.0
+        # Phase 2A: walker's x now advances with locomotion (frame 8 = t=1/3s
+        # into its walk, default speed 90 units/s); stander never moves.
+        assert frame8["walker"]["x"] > 300.0
         assert frame8["stander"]["x"] == 800.0

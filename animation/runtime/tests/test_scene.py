@@ -45,7 +45,9 @@ def test_multiple_characters_evaluate_independently():
 
     assert "thigh_front" in walker_pose.bones
     assert stander_pose.bone_rotation_map() == {}
-    assert state[walker.instance_id]["position"] == (300.0, 650.0)
+    # Phase 2A: walking now advances world position (default speed=90,
+    # direction=1) - the standing character's position is untouched.
+    assert state[walker.instance_id]["position"] == (300.0 + 90.0 * 3.0, 650.0)
     assert state[stander.instance_id]["position"] == (800.0, 650.0)
 
 
