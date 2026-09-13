@@ -234,7 +234,7 @@ class PaintRequestHandler(BaseHTTPRequestHandler):
                     "create_frame", "select_frame", "get_current_frame",
                     "set_current_frame", "create_keyframe", "delete_keyframe", "list_keyframes", "has_keyframe",
                     "enable_onion", "inspect_previous_frame", "bulk_strokes",
-                    "list_layers", "get_canvas_info", "draw_scene"
+                    "list_layers", "get_canvas_info", "draw_scene", "configure_animation"
                 ]
             })
         else:
@@ -370,6 +370,8 @@ class KritaMCPExtension(Extension):
                 return self.cmd_create_frame(params)
             elif action == "select_frame":
                 return self.cmd_select_frame(params)
+            elif action == "configure_animation":
+                return self.cmd_configure_animation(params, request_id)
             elif action == "get_current_frame":
                 return self.cmd_get_current_frame(params)
             elif action == "set_current_frame":
@@ -1275,6 +1277,39 @@ class KritaMCPExtension(Extension):
             return {"status": "ok", "current_frame": current, "keyframes": keyframes}
         except Exception as e:
             return {"error": str(e)}
+
+    def cmd_configure_animation(self, params, request_id=None):
+        """Set frame rate and/or playback range on the CURRENT active
+        document (does not create or resize any canvas). Both params are
+        optional; omit either to leave it unchanged."""
+        doc = self.get_active_document()
+        if not doc:
+            return {"error_type": "DOCUMENT_NOT_FOUND", "message": "No active document", "recoverable": False, "request_id": request_id}
+
+        frame_rate = params.get("frame_rate")
+        playback_end = params.get("playback_end")
+        playback_start = params.get("playback_start", 0)
+
+        if frame_rate is not None:
+            try:
+                doc.setFramesPerSecond(int(frame_rate))
+            except Exception as e:
+                return {"error_type": "FRAME_RATE_SET_FAILED", "message": f"Failed to set frame rate: {e}", "recoverable": True, "request_id": request_id}
+
+        if playback_end is not None:
+            try:
+                doc.setPlayBackRange(int(playback_start), int(playback_end))
+            except Exception as e:
+                return {"error_type": "PLAYBACK_RANGE_SET_FAILED", "message": f"Failed to set playback range: {e}", "recoverable": True, "request_id": request_id}
+
+        return {
+            "status": "ok",
+            "frame_rate": int(doc.framesPerSecond()),
+            "playback_start": int(doc.playBackStartTime()),
+            "playback_end": int(doc.playBackEndTime()),
+            "animation_length": int(doc.animationLength()),
+            "request_id": request_id,
+        }
 
     def cmd_list_keyframes(self, params):
         """List keyframes on the active paint layer."""

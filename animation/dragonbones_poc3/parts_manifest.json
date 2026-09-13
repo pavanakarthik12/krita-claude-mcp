@@ -1,0 +1,13 @@
+{
+  "parts": [
+    {
+      "component": "front_foot",
+      "file": "parts/front_foot.png",
+      "width": 132,
+      "height": 149,
+      "pivot_x": 151.7311,
+      "pivot_y": -95.2214,
+      "bone": "shin"
+    }
+  ]
+}

@@ -1,0 +1,144 @@
+{
+  "frameRate": 24,
+  "name": "Walker2Data",
+  "version": "5.5",
+  "armature": [
+    {
+      "type": "Armature",
+      "name": "Walker2",
+      "frameRate": 24,
+      "bone": [
+        {
+          "name": "root",
+          "transform": {
+            "x": 650.1695,
+            "y": 805.1164
+          }
+        },
+        {
+          "name": "torso",
+          "parent": "root",
+          "inheritRotation": false,
+          "transform": {
+            "x": -27.6139,
+            "y": -145.4497,
+            "skX": 0.0,
+            "skY": 0.0
+          },
+          "length": 148.0478
+        },
+        {
+          "name": "head",
+          "parent": "torso",
+          "inheritRotation": false,
+          "transform": {
+            "x": 1.6618,
+            "y": -395.1449,
+            "skX": 0.0,
+            "skY": 0.0
+          },
+          "length": 395.1484
+        },
+        {
+          "name": "thigh_back",
+          "parent": "torso",
+          "inheritRotation": false,
+          "transform": {
+            "x": 50.3213,
+            "y": 143.1628,
+            "skX": -17.4404,
+            "skY": -17.4404
+          },
+          "length": 151.7492
+        },
+        {
+          "name": "shin_back",
+          "parent": "thigh_back",
+          "inheritRotation": false,
+          "transform": {
+            "x": 0.0,
+            "y": 180.3774,
+            "skX": -17.4404,
+            "skY": -17.4404
+          },
+          "length": 180.3774
+        },
+        {
+          "name": "thigh_front",
+          "parent": "torso",
+          "inheritRotation": false,
+          "transform": {
+            "x": 4.9066,
+            "y": 147.7366,
+            "skX": 31.2803,
+            "skY": 31.2803
+          },
+          "length": 147.8181
+        },
+        {
+          "name": "shin_front",
+          "parent": "thigh_front",
+          "inheritRotation": false,
+          "transform": {
+            "x": 0.0,
+            "y": 147.78,
+            "skX": 31.2803,
+            "skY": 31.2803
+          },
+          "length": 147.78
+        },
+        {
+          "name": "upper_arm_back",
+          "parent": "torso",
+          "inheritRotation": false,
+          "transform": {
+            "x": 46.4444,
+            "y": -145.6667,
+            "skX": -25.413,
+            "skY": -25.413
+          },
+          "length": 152.8917
+        },
+        {
+          "name": "forearm_back",
+          "parent": "upper_arm_back",
+          "inheritRotation": false,
+          "transform": {
+            "x": 0.0,
+            "y": 122.3376,
+            "skX": -25.413,
+            "skY": -25.413
+          },
+          "length": 122.3376
+        },
+        {
+          "name": "upper_arm_front",
+          "parent": "torso",
+          "inheritRotation": false,
+          "transform": {
+            "x": -12.5556,
+            "y": -160.6667,
+            "skX": 34.2157,
+            "skY": 34.2157
+          },
+          "length": 161.1565
+        },
+        {
+          "name": "forearm_front",
+          "parent": "upper_arm_front",
+          "inheritRotation": false,
+          "transform": {
+            "x": 0.0,
+            "y": 136.0459,
+            "skX": 34.2157,
+            "skY": 34.2157
+          },
+          "length": 136.0459
+        }
+      ],
+      "skin": [],
+      "ik": [],
+      "animation": []
+    }
+  ]
+}

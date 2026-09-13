@@ -1,0 +1,94 @@
+{
+  "parts": [
+    {
+      "component": "back_leg",
+      "bone": "thigh_back",
+      "file": "parts/back_leg.png",
+      "width": 168,
+      "height": 357,
+      "pivot_x": 26.4091,
+      "pivot_y": 6.0014
+    },
+    {
+      "component": "back_foot",
+      "bone": "shin_back",
+      "file": "parts/back_foot.png",
+      "width": 171,
+      "height": 117,
+      "pivot_x": -51.9183,
+      "pivot_y": -85.8546
+    },
+    {
+      "component": "back_upper_arm",
+      "bone": "upper_arm_back",
+      "file": "parts/back_upper_arm.png",
+      "width": 142,
+      "height": 233,
+      "pivot_x": 6.0,
+      "pivot_y": 6.0
+    },
+    {
+      "component": "back_hand",
+      "bone": "forearm_back",
+      "file": "parts/back_hand.png",
+      "width": 72,
+      "height": 74,
+      "pivot_x": -51.5,
+      "pivot_y": -87.3543
+    },
+    {
+      "component": "torso",
+      "bone": "torso",
+      "file": "parts/torso.png",
+      "width": 150,
+      "height": 368,
+      "pivot_x": 64.5556,
+      "pivot_y": 219.6705
+    },
+    {
+      "component": "front_leg",
+      "bone": "thigh_front",
+      "file": "parts/front_leg.png",
+      "width": 209,
+      "height": 265,
+      "pivot_x": 188.4621,
+      "pivot_y": 5.9882
+    },
+    {
+      "component": "front_foot",
+      "bone": "shin_front",
+      "file": "parts/front_foot.png",
+      "width": 132,
+      "height": 149,
+      "pivot_x": 151.7311,
+      "pivot_y": -95.223
+    },
+    {
+      "component": "front_upper_arm",
+      "bone": "upper_arm_front",
+      "file": "parts/front_upper_arm.png",
+      "width": 167,
+      "height": 242,
+      "pivot_x": 159.0,
+      "pivot_y": 6.0
+    },
+    {
+      "component": "front_hand",
+      "bone": "forearm_front",
+      "file": "parts/front_hand.png",
+      "width": 72,
+      "height": 74,
+      "pivot_x": 105.5,
+      "pivot_y": -112.3304
+    },
+    {
+      "component": "head",
+      "bone": "head",
+      "file": "parts/head.png",
+      "width": 362,
+      "height": 360,
+      "pivot_x": 188.3132,
+      "pivot_y": 175.6811
+    }
+  ]
+}

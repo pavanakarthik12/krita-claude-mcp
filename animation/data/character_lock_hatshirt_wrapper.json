@@ -1,0 +1,23 @@
+{
+ "character_id": "char_hat_shirt_trousers_v1",
+ "locked": true,
+ "checksum": "26fb3f1b9c1d36b6",
+ "proportion_ratios_validated": {
+  "shoulder_width_over_head_width": {
+   "reference_target": 1.75,
+   "measured_render": 1.79,
+   "within_tolerance": true
+  },
+  "hip_width_over_shoulder_width": {
+   "design_value": 0.518,
+   "measured_render": 0.51,
+   "within_tolerance": true
+  },
+  "torso_height_over_leg_height": {
+   "design_value": 0.858,
+   "measured_render": 0.86,
+   "within_tolerance": true
+  }
+ },
+ "note": "Rigorously measured via Part 1-5 fx/fy landmark table + Part 6 transform-integrity test (452/452 Bezier segments preserved, 0.0 shape drift under rotation). No corrections needed - all ratios were within ~1-2% of the measured reference."
+}
